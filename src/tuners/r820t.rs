@@ -8,13 +8,12 @@ const R820T_I2C_ADDR: u16 = 0x34;
 // const R828D_I2C_ADDR: u8 = 0x74; for now only support the T
 const VER_NUM: u8 = 49;
 pub const R82XX_IF_FREQ: u32 = 3570000;
-const NUM_REGS: usize = 32;
+const NUM_REGS: usize = 30;
 const RW_REG_START: usize = 5; // registers 0-4 are read-only
-const NUM_CACHE_REGS: usize = NUM_REGS - RW_REG_START; // only cache RW regs
 const MAX_I2C_MSG_LEN: usize = 8;
 
 // Init registers (32 total, first 5 are read-only)
-const REG_INIT: [u8; NUM_CACHE_REGS] = [
+const REG_INIT: [u8; NUM_REGS] = [
     0x83, 0x32, 0x75, /* 05 to 07 */
     0xc0, 0x40, 0xd6, 0x6c, /* 08 to 0b */
     0xf5, 0x63, 0x75, 0x68, /* 0c to 0f */
@@ -22,6 +21,7 @@ const REG_INIT: [u8; NUM_CACHE_REGS] = [
     0x0f, 0x00, 0xc0, 0x30, /* 14 to 17 */
     0x48, 0xcc, 0x60, 0x00, /* 18 to 1b */
     0x54, 0xae, 0x4a, 0xc0, /* 1c to 1f */
+    0x00, 0x00, 0x00,
 ];
 
 /* measured with a Racal 6103E GSM test set at 928 MHz with -60 dBm
@@ -282,7 +282,7 @@ enum DeliverySystem {
 #[derive(Debug)]
 pub struct R820T {
     pub info: TunerInfo,
-    regs: [u8; NUM_CACHE_REGS],
+    regs: [u8; NUM_REGS],
     pub freq: u32,
     int_freq: u32,
     xtal_cap_sel: XtalCapValue,
@@ -358,6 +358,7 @@ impl Tuner for R820T {
     }
 
     fn set_gain(&mut self, handle: &Device, mode: TunerGain) -> Result<()> {
+        println!("set gain {:?}", mode);
         match mode {
             TunerGain::Auto => {
                 // LNA
@@ -396,20 +397,12 @@ impl Tuner for R820T {
                     mix_index += 1;
                     total_gain += R82XX_MIXER_GAIN_STEPS[mix_index as usize];
                 }
+                println!("lna index {lna_index}   mix_index {mix_index}");
                 // Set LNA gain
                 self.write_reg_mask(handle, 0x05, lna_index, 0x0f)?;
 
                 // Set mixer gain
                 self.write_reg_mask(handle, 0x07, mix_index, 0x0f)?;
-
-                // LNA
-                self.write_reg_mask(handle, 0x05, 0, 0x10)?;
-
-                // Mixer
-                self.write_reg_mask(handle, 0x07, 0x10, 0x10)?;
-
-                // Set fixed VGA gain for now (26.5dB)
-                self.write_reg_mask(handle, 0x0c, 0x0b, 0x9f)?;
             }
         }
         Ok(())
@@ -427,6 +420,7 @@ impl Tuner for R820T {
     }
 
     fn set_bandwidth(&mut self, handle: &Device, bw_in: u32, _rate: u32) -> Result<()> {
+        println!("set bandwidth {}", bw_in);
         let mut bw: i32 = bw_in as i32;
         const FILT_HP_BW1: i32 = 350_000;
         const FILT_HP_BW2: i32 = 380_000;
@@ -472,12 +466,13 @@ impl Tuner for R820T {
             let mut lp_idx = 0;
             // Want the element before the first that is lower than bw
             for (i, freq) in R82XX_IF_LOW_PASS_BW_TABLE.iter().enumerate() {
+                lp_idx = i;
                 if bw > *freq {
                     break;
                 }
-                lp_idx = i;
             }
-            reg_0b |= 15 - lp_idx as u8;
+            lp_idx -= 1;
+            reg_0b |= (15 - lp_idx) as u8;
             real_bw += R82XX_IF_LOW_PASS_BW_TABLE[lp_idx];
 
             self.int_freq -= (real_bw / 2) as u32;
@@ -832,8 +827,8 @@ impl R820T {
             self.write_reg_mask(handle, 0x1e, lna_discharge, 0x1f)?;
             // agc clk 1Khz, external det1 cap 1u
             self.write_reg_mask(handle, 0x1a, 0x00, 0x30)?;
+            self.write_reg_mask(handle, 0x10, 0x00, 0x04)?;
         }
-        self.write_reg_mask(handle, 0x10, lna_discharge, 0x04)?;
         Ok(())
     }
 
@@ -852,7 +847,7 @@ impl R820T {
         let polyfil_cur = 0x60; /* r25[6:5]:min */
 
         // Initialize register cache
-        self.regs.copy_from_slice(&REG_INIT[0..NUM_CACHE_REGS]);
+        self.regs.copy_from_slice(&REG_INIT[..]);
 
         // Init Flag & Xtal_check Result (inits VGA gain, needed?)
         self.write_reg_mask(handle, 0x0c, 0x00, 0x0f)?;
@@ -883,7 +878,8 @@ impl R820T {
                 // Start trigger
                 self.write_reg_mask(handle, 0x0b, 0x10, 0x10)?;
                 // Stop trigger
-                self.write_reg_mask(handle, 0x0b, 0x00, 0x04)?;
+                self.write_reg_mask(handle, 0x0b, 0x00, 0x10)?;
+                self.write_reg_mask(handle, 0x0f, 0x00, 0x04)?;
 
                 // Check if calibration worked
                 let mut data: [u8; 5] = [0; 5];
@@ -892,10 +888,10 @@ impl R820T {
                 if self.fil_cal_code != 0x0f {
                     break;
                 }
-                // Narrowest
-                if self.fil_cal_code == 0x0f {
-                    self.fil_cal_code = 0;
-                }
+            }
+            // Narrowest
+            if self.fil_cal_code == 0x0f {
+                self.fil_cal_code = 0;
             }
         }
         self.write_reg_mask(handle, 0x0a, filt_q | self.fil_cal_code, 0x1f)?;
@@ -984,7 +980,7 @@ impl R820T {
     fn read_cache_reg(&self, reg: usize) -> u8 {
         assert!(reg >= RW_REG_START); // is assert the best thing to use here?
         let index = reg - RW_REG_START;
-        assert!(index < NUM_CACHE_REGS); // is assert the best thing to use here?
+        assert!(index < NUM_REGS); // is assert the best thing to use here?
         self.regs[index]
     }
 
@@ -993,6 +989,19 @@ impl R820T {
         // Store write in local cache
         self.reg_cache_store(reg, val);
 
+        println!(
+            "write reg={:02x}, val={:02x}, len={}",
+            reg,
+            val[0],
+            val.len()
+        );
+        if val.len() > 1 {
+            print!("[");
+            for i in 0..val.len() {
+                print!("{:02x}, ", val[i]);
+            }
+            println!("]");
+        }
         // Use I2C to write to device in chunks of MAX_I2C_MSG_LEN
         let mut len = val.len();
         let mut val_index = 0;
@@ -1031,11 +1040,11 @@ impl R820T {
     }
 
     /// Cache register values locally.
-    /// Will panic if reg < RW_REG_START or (reg + len) > NUM_CACHE_REGS + 1
+    /// Will panic if reg < RW_REG_START or (reg + len) > NUM_REGS + 1
     fn reg_cache_store(&mut self, mut reg: usize, val: &[u8]) {
         assert!(reg >= RW_REG_START);
         reg -= RW_REG_START;
-        assert!(reg + val.len() <= NUM_CACHE_REGS);
+        assert!(reg + val.len() <= NUM_REGS);
         self.regs[reg..reg + val.len()].copy_from_slice(val);
     }
 }

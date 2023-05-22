@@ -133,8 +133,8 @@ impl RtlSdr {
         self.set_i2c_repeater(false)?;
         info!("Init complete");
 
-        self.set_sample_rate(2_000_000)?;
-        self.set_center_freq(100_000)?;
+        // self.set_sample_rate(2_000_000)?;
+        // self.set_center_freq(100_000)?;
         Ok(())
     }
 
@@ -268,40 +268,40 @@ impl RtlSdr {
         inner.deref().borrow_mut().rate = real_rate as u32;
 
         // Configure tuner
-        self.set_i2c_repeater(true)?;
-        let val = if inner.deref().borrow().bw > 0 {
-            inner.deref().borrow().bw
-        } else {
-            inner.deref().borrow().rate
-        };
-        let r = inner.deref().borrow().rate;
-        inner
-            .deref()
-            .borrow_mut()
-            .tuner
-            .set_bandwidth(&self.handle, val, r)?;
-        self.set_i2c_repeater(false)?;
-        if inner.deref().borrow().tuner.get_info()?.id == TUNER_ID {
-            self.set_if_freq(inner.deref().borrow().tuner.get_if_freq()?)?;
-            let freq = inner.deref().borrow().freq;
-            self.set_center_freq(freq)?;
-        }
-
-        let mut tmp: u16 = (rsamp_ratio >> 16) as u16;
-        self.handle.demod_write_reg(1, 0x9f, tmp, 2)?;
-        tmp = (rsamp_ratio & 0xffff) as u16;
-        self.handle.demod_write_reg(1, 0xa1, tmp, 2)?;
-
-        self.set_sample_freq_correction(inner.deref().borrow().corr)?;
-
-        // Reset demod (bit 3, soft_rst)
-        self.handle.demod_write_reg(1, 0x01, 0x14, 1)?;
-        self.handle.demod_write_reg(1, 0x01, 0x10, 1)?;
-
-        // Recalculate offset frequency if offset tuning is enabled
-        if inner.deref().borrow().offset_freq != 0 {
-            self.set_offset_tuning(true)?;
-        }
+        // self.set_i2c_repeater(true)?;
+        // let val = if inner.deref().borrow().bw > 0 {
+        //     inner.deref().borrow().bw
+        // } else {
+        //     inner.deref().borrow().rate
+        // };
+        // let r = inner.deref().borrow().rate;
+        // inner
+        //     .deref()
+        //     .borrow_mut()
+        //     .tuner
+        //     .set_bandwidth(&self.handle, val, r)?;
+        // self.set_i2c_repeater(false)?;
+        // if inner.deref().borrow().tuner.get_info()?.id == TUNER_ID {
+        //     self.set_if_freq(inner.deref().borrow().tuner.get_if_freq()?)?;
+        //     let freq = inner.deref().borrow().freq;
+        //     self.set_center_freq(freq)?;
+        // }
+        //
+        // let mut tmp: u16 = (rsamp_ratio >> 16) as u16;
+        // self.handle.demod_write_reg(1, 0x9f, tmp, 2)?;
+        // tmp = (rsamp_ratio & 0xffff) as u16;
+        // self.handle.demod_write_reg(1, 0xa1, tmp, 2)?;
+        //
+        // self.set_sample_freq_correction(inner.deref().borrow().corr)?;
+        //
+        // // Reset demod (bit 3, soft_rst)
+        // self.handle.demod_write_reg(1, 0x01, 0x14, 1)?;
+        // self.handle.demod_write_reg(1, 0x01, 0x10, 1)?;
+        //
+        // // Recalculate offset frequency if offset tuning is enabled
+        // if inner.deref().borrow().offset_freq != 0 {
+        //     self.set_offset_tuning(true)?;
+        // }
         Ok(())
     }
 
@@ -320,9 +320,12 @@ impl RtlSdr {
             .tuner
             .set_bandwidth(&self.handle, bw, r)?;
         self.set_i2c_repeater(false)?;
-        if inner.deref().borrow().tuner.get_info()?.id == TUNER_ID {
-            self.set_if_freq(inner.deref().borrow().tuner.get_if_freq()?)?;
-            self.set_center_freq(inner.deref().borrow().freq)?;
+        let is_tuner = inner.deref().borrow().tuner.get_info()?.id == TUNER_ID;
+        if is_tuner {
+            let if_freq = inner.deref().borrow().tuner.get_if_freq()?;
+            self.set_if_freq(if_freq)?;
+            let freq = inner.deref().borrow().freq;
+            self.set_center_freq(freq)?;
         }
         inner.deref().borrow_mut().bw = bw;
         Ok(())
@@ -469,6 +472,7 @@ impl RtlSdr {
     }
 
     pub fn read_sync(&self, buf: &mut [u8]) -> Result<usize> {
+        // println!("bulk rx len {}", buf.len());
         self.handle.bulk_transfer(buf)
     }
 
@@ -492,7 +496,7 @@ impl RtlSdr {
         self.handle.demod_write_reg(1, 0x16, 0x00, 2)?;
 
         // info!("Clear DDC shift and IF registers");
-        for i in 0..5 {
+        for i in 0..6 {
             self.handle.demod_write_reg(1, 0x16 + i, 0x00, 1)?;
         }
         self.set_fir(DEFAULT_FIR)?;
