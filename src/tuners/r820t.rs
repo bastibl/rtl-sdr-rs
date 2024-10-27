@@ -682,6 +682,7 @@ impl R820T {
         Ok(())
     }
 
+    #[allow(unused_variables, unused_assignments)]
     fn sysfreq_sel(
         &mut self,
         handle: &Device,
@@ -692,7 +693,8 @@ impl R820T {
         let mixer_top;
         let lna_top;
         let cp_cur;
-        let div_buf_cur;
+        #[allow(unused_mut)]
+        let mut div_buf_cur;
         let lna_vth_l;
         let mixer_vth_l;
         let air_cable1_in;

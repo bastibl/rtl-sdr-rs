@@ -114,17 +114,10 @@ impl RtlSdr {
         // Hack to force the Bias T to always be on if we set the IR-Endpoint bit in the EEPROM to 0. Default on EEPROM is 1.
         let buf: [u8; EEPROM_SIZE] = [0; EEPROM_SIZE];
         self.handle.read_eeprom(&buf, 0, EEPROM_SIZE)?;
-        if buf[7] & 0x02 != 0 {
-            inner.deref().borrow_mut().force_bt = false;
-        } else {
-            inner.deref().borrow_mut().force_bt = true;
-        }
+
+        inner.deref().borrow_mut().force_bt = buf[7] & 0x02 == 0;
         // Hack to force direct sampling mode to always be on if we set the remote-enabled bit in the EEPROM to 1. Default on EEPROM is 0.
-        if buf[7] & 0x01 != 0 {
-            inner.deref().borrow_mut().force_ds = true;
-        } else {
-            inner.deref().borrow_mut().force_ds = false;
-        }
+        inner.deref().borrow_mut().force_ds = buf[7] & 0x01 != 0;
         // TODO: if(force_ds){tuner_type = TUNER_UNKNOWN}
         info!("Init tuner");
         inner.deref().borrow_mut().tuner.init(&self.handle)?;
@@ -400,7 +393,8 @@ impl RtlSdr {
         Ok(())
     }
 
-    pub fn set_offset_tuning(&self, _enable: bool) -> Result<()> {
+    #[allow(unused_variables)]
+    pub fn set_offset_tuning(&self, enable: bool) -> Result<()> {
         // RTL-SDR-BLOG Hack, enables us to turn on the bias tee by clicking on "offset tuning"
         // in software that doesn't have specified bias tee support.
         // Offset tuning is not used for R820T devices so it is no problem.

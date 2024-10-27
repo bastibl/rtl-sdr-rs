@@ -273,8 +273,8 @@ impl Demod {
     /// Applies a low-pass filter on a vector of complex values
     fn low_pass_complex(&mut self, buf: Vec<Complex<i32>>) -> Vec<Complex<i32>> {
         let mut res = vec![];
-        for orig in 0..buf.len() {
-            self.lp_now += buf[orig];
+        for orig in buf {
+            self.lp_now += orig;
 
             self.prev_index += 1;
             if self.prev_index < self.config.downsample as usize {
@@ -329,12 +329,11 @@ impl Demod {
         if yabs < 0 {
             yabs = -yabs;
         }
-        let angle;
-        if x >= 0 {
-            angle = pi4 - (pi4 as i64 * (x - yabs) as i64) as i32 / (x + yabs);
+        let angle = if x >= 0 {
+            pi4 - (pi4 as i64 * (x - yabs) as i64) as i32 / (x + yabs)
         } else {
-            angle = pi34 - (pi4 as i64 * (x + yabs) as i64) as i32 / (yabs - x);
-        }
+            pi34 - (pi4 as i64 * (x + yabs) as i64) as i32 / (yabs - x)
+        };
         if y < 0 {
             return -angle;
         }
